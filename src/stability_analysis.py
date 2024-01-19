@@ -8,12 +8,36 @@ from sklearn.model_selection import GridSearchCV
 import matplotlib.pyplot as plt
 
 
-    
-class LatentSubgroupShiftEstimator(BaseEstimator):
-    """
-        Class for calculating the risk (i.e., expected loss) of a model under 
-        a worst case covariate shift in the distribution of a set of subgroup
-        characteristics.
+#Old name: LatentSubgroupShiftEstimator    
+class WorstSubsetFinder(BaseEstimator):
+    """This is a class for performing a Stability Analysis of a trained machine
+    learning (ML) model. Given a test dataset, a WorstSubsetFinder object 
+    identifies a data subset of a particular sample size that produces the
+    worst performance (i.e., a worst-case data subset of a given size). A worst
+    case data subset corresponds to an adversarial covariate shift in the 
+    distribution of user-specified features.
+
+    :param subset_fractions: A list of subset fractions between 0 and 1. For 
+        each subset fraction, the WorstSubsetFinder identifies the worst
+        performing subset of approximately that subset fraction size (i.e., for
+        a subset fraction f and a dataset of size N, the subset will be size
+        approximately f*N, defaults to [0.1, 0.15, 0.2, 0.4, 0.6, 0.8, 1.0].
+    :type subset_fractions: List[float]
+    :param conditional_loss_model: A supervised learning model with sklearn 
+        interface for estimating the expected conditional loss of the ML model
+        to be evaluated, defaults to None which will fit an 
+        ExplainableBoostingRegressor.
+    :param cv: Number of folds for cross validation to predict the loss for
+        each data sample, defaults to 10.
+    :type cv: int
+    :param verbose: If True, then prints information during calls to self.fit,
+        defaults to False.
+    :type verbose: bool
+    :param eps: Corresponds to the max amount of noise to add to conditional
+        loss estimates. It is used to break ties between samples with the same
+        expected loss. It should be set to a small positive value if many
+        subgroup features are discrete, defaults to 0.
+    :type eps: float
     """
     
     def __init__(self,
@@ -22,34 +46,10 @@ class LatentSubgroupShiftEstimator(BaseEstimator):
                  cv = 10,
                  verbose=False,
                  eps=0.0):
+        """Constructor method
         """
-            Instantiate a LatentSubgroupShiftEstimator object
-        
-            Args:
-                subset_fractions: List of subset fractions between 0 and 1.
-                    For each subset fraction, the worst-case risk of the model
-                    will be computed. For a subset fraction f and a datset of
-                    size N, this will produce a worst-case subset of size
-                    approximately f*N.
-                    
-                conditional_loss_model: A supervised learning model with
-                    sklearn interface for fitting the expected conditional
-                    loss of the model to be evaluated. Default is an
-                    ExplainableBoostingRegressor.
-                    
-                cv: Number of folds for cross validation. Instance wise losses
-                    are predicted via cross validation.
-                    
-                verbose: If True, then prints during calls to self.fit(...).
-                    Default 'False'.
-                    
-                eps: Float >= 0 corresponding to max amount of noise to add to
-                    expected conditional loss estimates. It is used to break
-                    ties between samples with the same expected losses. It
-                    incurs statistical bias of at most eps. Set to small 
-                    non-zero values if all subgroup features are discrete.
-        """
-        
+        if eps < 0:
+            raise RuntimeError('eps must be a float >= 0')
         self.__dict__.update(locals())
         self.fit_called_ = False
         self._masks = None
@@ -57,22 +57,19 @@ class LatentSubgroupShiftEstimator(BaseEstimator):
         
     def fit(self, subgroup_feature_data, 
             samplewise_losses, feature_names=None):
-        """Estimates worst-case losses under latent subgroup shifts.
-     
-        Args:
-            subgroup_features: ((nsamples, nfeatures), ndarray)
-                Numpy array containing the subgroup features
-                
-            feature_names: ((nfeatures,), List)
-                List of the subgroup characterizing features.
-            
-            samplewise_losses: ((nsamples,), array)
-                Array of samplewise losses of the model to evaluate's 
-                predictions.
-            
-        Returns:
-            Returns an array of worst-case risk estimates, one per subset
-            fraction.
+        """Computes the worst-case data subsets for each subset fraction and
+        returns the average loss on each subset.
+
+        :param subgroup_features: A numpy array of dim (nsamples, nfeatures)
+            containing the subgroup defining feature values for each sample.
+        :type subgroup_features: ((nsamples, nfeatures), ndarray)
+        :param samplewise_losses: A numpy array of the per-sample observed loss
+        :type samplewise_losses: ((nsamples,), array)
+        :param feature_names: A list of names for the subgroup
+            characterizing features, optional
+        :type feature_names: List[string], optional
+        :return: An array containing the average loss on each worst-case subset
+        :rtype: (# of subset_fractions, array)
         """
         
         # by default we will use Explainable Boosting Machines (EBMs) since
@@ -158,31 +155,27 @@ class LatentSubgroupShiftEstimator(BaseEstimator):
         return self.R_hats_
     
     def confidence_intervals(self):
-        """Computes analytical confidence intervals for the worst-case risk
+        """Returns analytical confidence intervals for the worst-case loss
         estimates for each subset fraction size.
-        
-        Args:
-        
-        Returns: ((# of subset fraction sizes, 2),ndarray)
-            Array with first column containing lower confidence interval and
-            second column containing upper confidence interval.
+
+        :return: Array with first column containing lower confidence interval 
+            and second column containing upper confidence interval.
+        :rtype: ((# of subset fraction sizes, 2),ndarray)
         """
         
         if not self.fit_called_:
-            raise RuntimeError('Must call "fit" on LatentSubgroupShiftEstimator object first.')
+            raise RuntimeError('Must call "fit" on WorstSubsetFinder object first.')
         return self.cis_
     
     def subset_masks(self):
         """Computes a boolean mask for indexing worst-case data subsets.
-     
-        Args:
-            
-        Returns:
-            Array of boolean masks for indexing the worst-case subset
-            corresponding to each subset fraction
+
+        :return: List of boolean masks for indexing the worst-case data
+            subsets corresponding to each subset fraction
+        :rtype: List[(# of samples, boolean ndarray)]
         """
         if not self.fit_called_:
-            raise RuntimeError('Must call "fit" on LatentSubgroupShiftEstimator object first.')
+            raise RuntimeError('Must call "fit" on WorstSubsetFinder object first.')
         # find the samples for which expected conditional loss is greater
         # than the quantile.
         # only compute once
@@ -193,23 +186,21 @@ class LatentSubgroupShiftEstimator(BaseEstimator):
         return self._masks
     
     def check_subset_sizes(self, plot=True, ax=None):
-        """Diagnostic for checking that fitting risk estimator worked.
-     
-        Args:
-            plot: bool, default=True
-                Boolean flag for plotting the subset size checking diagnostic.
-                
-            ax: matplotlib axis, default=None
-                Matplotlib axis to plot on.
-            
-        Returns:
-            Two lists, the first containing the subset fractions and the second
-            containing the extracted fractions. When plotted against each other
-            the relationship should match y=x.
+        """A visual diagnostic for checking subset sizes are correct.
+
+        :param plot: Whether or not to plot the results, defaults to True
+        :type plot: bool
+        :param ax: Matplotlib axis to plot on if plot is True, defaults to
+            None, optional
+        :type ax: Matplotlib axis
+        :return: Two lists, the first containing the subset fractions and the
+            second containing the identified fractions. When plotted against
+            each other the relationship should match the line y=x.
+        :rtype: (List[float], List[float])
         """
         
         if not self.fit_called_:
-            raise RuntimeError('Must call "fit" on LatentSubgroupShiftEstimator object first.')
+            raise RuntimeError('Must call "fit" on WorstSubsetFinder object first.')
         observed_fractions = [np.mean(m) for m in self.subset_masks()]
         
         if plot:

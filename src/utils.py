@@ -4,16 +4,19 @@ from sklearn.metrics import roc_auc_score
         
                 
 def clip_predictions(preds, upper_bound=0.99, lower_bound=0.01):
-    """Clip probability predictions to be in (0, 1) (open interval).
-     
-        Args:
-            preds: Numpy array of sample predictions.
-            upper_bound: Upper bound of clipped predictions.
-            lower_bound: Lower bound of clipped predictions.
-        Returns:
-            Predictions clipped to be in [lower_bound, upper_bound] interval
+    """Clip probability predictions to be in the (0, 1) open interval.
+
+    :param preds: Array of sample predictions
+    :type preds: (num samples,) np array
+    :param upper_bound: Upper bound of clipped predictions, defaults to 0.99
+    :type upper_bound: float
+    :param lower_bound: Lower bound of clipped predictions, defaults to 0.01
+    :type lower_bound: float
+    :return: Predictions clipped to be in [lower_bound, upper_bound] interval
+    :rtype: List[float]
     """
-     
+    if upper_bound >= 1.0 or lower_bound <= 0.0:
+            raise RuntimeError('upper_bound must be < 1 and lower_bound must be > 0')
     new_preds = np.copy(preds)
     one_inds = np.where(preds > upper_bound)[0]
     zero_inds = np.where(preds < lower_bound)[0]
@@ -25,14 +28,15 @@ def clip_predictions(preds, upper_bound=0.99, lower_bound=0.01):
 
 
 # Sample wise loss functions
-def cross_entropy(y,y_pred, clip=True):
+def cross_entropy(y,y_pred):
     """Samplewise cross entropy loss for probabilistic classification
-     
-        Args:
-            y: Array of true binary classification labels.
-            y_pred: Array of probability predictions (between 0 and 1)
-        Returns:
-            Array of samplewise cross entropy losses.
+    
+    :param y: Array of true binary classification labels
+    :type y: Numpy array with values in {0, 1}
+    :param y_pred: Array of probabilistic predictions (between 0 and 1)
+    :type y_pred: Numpy array with values in (0, 1)
+    :return: Array of per-sample cross entropy losses
+    :rtype: Array[float]
     """
     
     # Note: problems if preds are in {0, 1}
@@ -45,12 +49,13 @@ def entropy(y, y_pred):
 
 def brier(y, y_pred):
     """Samplewise brier score for probabilistic classification
-     
-        Args:
-            y: Array of true binary classification labels.
-            y_pred: Array of probability predictions (between 0 and 1).
-        Returns:
-            Array of samplewise brier scores.
+
+    param y: Array of true binary classification labels
+    :type y: Numpy array with values in {0, 1}
+    :param y_pred: Array of probabilistic predictions (between 0 and 1)
+    :type y_pred: Numpy array with values in (0, 1)
+    :return: Array of per-sample brier scores
+    :rtype: Array[float]
     """
     
     return (y-y_pred)**2
@@ -62,16 +67,23 @@ def weighted_zero_one_loss(y, y_pred, prevalence=0.02):
     return correct * (w1*y + w0*(1-y))
 
 def zero_one_loss(y, y_pred):
+    """Samplewise Zero-One Loss for binary classification
+    
+    param y: Array of true binary classification labels
+    :type y: Numpy array with values in {0, 1}
+    :param y_pred: Array of binary classification predictions {0, 1}
+    :type y_pred: Numpy array with values in {0, 1}
+    :return: Array of per-sample zero-one losses
+    :rtype: Array[float]
+    """
     return 1. * (y != y_pred)
     
 def mse(y, y_pred):
     """Samplewise mean squared error for regression
-     
-        Args:
-            y: Array of true regression labels.
-            y_pred: Array of regression predictions.
-        Returns:
-            Array of samplewise mean squared errors.
+
+    :param y: Array of true regression labels
+    :param y_pred: Array of regressin predictions
+    :return: Array of samplewise mean squared errors
     """
     
     return (y - y_pred)**2
@@ -126,16 +138,15 @@ def pfohl_torch_roc_auc_surrogate(y, y_pred, surrogate='xent'):
 
 def torch_roc_auc_surrogate(y, y_pred, surrogate='xent'):
     """PyTorch computation of a surrogate samplewise AUROC loss.
-     
-        Args:
-            y: Array of true binary classification labels.
-            y_pred: Array of probability predictions (between 0 and 1)
-            surrogate: String specifying which surrogate loss function to use.
-                Default is 'xent'.
-                'xent': Cross-entropy surrogate.
-                'hinge': Hinge loss surrogate.
-        Returns:
-            Array of samplewise surrogate AUROC losses.
+
+    param y: Array of true binary classification labels
+    :type y: Numpy array with values in {0, 1}
+    :param y_pred: Array of probabilistic predictions (between 0 and 1)
+    :type y_pred: Numpy array with values in (0, 1)
+    :param surrogate: String specifying which surrogate loss function to use,
+        defaults to 'xent'. 'xent': Cross-entropy surrogate. 'hinge': Hinge
+        loss surrogate.
+    :return: Array of samplewise surrogate AUROC losses.
     """
     
     y_torch = torch.tensor(y)
@@ -149,7 +160,6 @@ def torch_roc_auc_surrogate(y, y_pred, surrogate='xent'):
     
     signed_logits_difference_torch = logits_difference_torch * labels_difference_torch
     
-    # TODO: make it 'DRY'
     if surrogate == 'xent':
         loss = torch.log(torch.sigmoid(signed_logits_difference_torch))
         loss = (abs_label_difference * loss).mean(axis=0) * 0.5
@@ -199,19 +209,21 @@ def roc_auc_surrogate(y, y_pred, surrogate='xent'):
 def bootstrap_ci(y_true, y_pred, n_bootstrap=100, confidence=0.95, loss=roc_auc_score, return_samples=False):
     """Computes non-parametric bootstrap confidence interval for model
     performance.
-    
-    Args:
-        y_true: True target labels.
-        y_pred: Target predictions (regression preds, probabilistic preds, 
-            or classification preds).
-        n_bootstrap: Number of bootstrap resamples to perform.
-            Default = 100.
-        confidence: The confidence level. Float between 0 and 1.
-            Default = 0.95 (i.e., 95% confidence)
-        loss: Loss function for computing average model performance. Should
-            have signature loss(y_true, y_pred).
-    Returns:
-        The mean performance, the lower interval, and the upper interval.
+
+    :param y_true: True target labels
+    :param y_pred: Model predictions (be it regression predictions, probability
+        predictions, or classification predictions).
+    :param n_bootstrap: Number of bootstrap resamples to perform, defaults to
+        100.
+    :type n_bootstrap: int
+    :param confidence: The confidence level for the interval as a decimal,
+        defaults to 0.95
+    :type confidence: Float, between 0 and 1
+    :param loss: Loss function for computing average model performance. Should
+        have signature 'loss(y_true, y_pred)', defaults to 
+        sklearn.metrics.roc_auc_score
+    :return: The mean performance, the lower interval, and the upper interval
+        from the bootstrap samples.
     """
     
     n = y_true.shape[0]
