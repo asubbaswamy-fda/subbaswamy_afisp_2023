@@ -60,12 +60,6 @@ def brier(y, y_pred):
     
     return (y-y_pred)**2
 
-def weighted_zero_one_loss(y, y_pred, prevalence=0.02):
-    w1 = 1./prevalence
-    w0 = 1./(1. - prevalence)
-    incorrect = (y != y_pred)
-    return correct * (w1*y + w0*(1-y))
-
 def zero_one_loss(y, y_pred):
     """Samplewise Zero-One Loss for binary classification
     
