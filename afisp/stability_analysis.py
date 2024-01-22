@@ -7,6 +7,7 @@ from interpret.glassbox import ExplainableBoostingClassifier, ExplainableBoostin
 from sklearn.model_selection import GridSearchCV
 import matplotlib.pyplot as plt
 from sklearn.cluster import KMeans, MiniBatchKMeans
+from afisp.utils import cohens_d
 
 
 
@@ -55,6 +56,7 @@ class WorstSubsetFinder(BaseEstimator):
         self.__dict__.update(locals())
         self.fit_called_ = False
         self._masks = None
+        self._effect_sizes_computed = False
         # self.fit_mu_ = False
         
     def fit(self, subgroup_feature_data, 
@@ -73,7 +75,7 @@ class WorstSubsetFinder(BaseEstimator):
         :return: An array containing the average loss on each worst-case subset
         :rtype: (# of subset_fractions, array)
         """
-        
+        self._samplewise_losses = samplewise_losses
         # by default we will use Explainable Boosting Machines (EBMs) since
         # we have observed that these models work well out of the box, without
         # any hyperparameter tuning.
@@ -216,6 +218,64 @@ class WorstSubsetFinder(BaseEstimator):
 
         
         return self.subset_fractions, observed_fractions
+    
+    def compute_effect_sizes(self, plot=False, ax=None):
+        """Compute the effect size (Cohen's d) of the difference in the average
+        loss for each worst-case subset and the full test dataset. Can also
+        plot the effect sizes vs subset fraction.
+
+        :param plot: Whether or not to plot the results, defaults to False
+        :type plot: bool
+        :param ax: Matplotlib axis to plot on if plot is True, defaults to
+            None, optional
+        :type ax: Matplotlib axis
+        :return: Two lists, the first containing the subset fractions and the
+            second containing the effect size of the difference in the average
+            loss in the worst subset and the full test dataset.
+        :rtype: (List[float], List[float])
+        """
+        if not self.fit_called_:
+            raise RuntimeError('Must call "fit" on WorstSubsetFinder object first.')
+
+        cds = []
+        # p_vals = []
+
+        for i, a in enumerate(self.subset_fractions):
+            idxs = self._masks[i]
+            odxs = self._masks[i]
+            cds.append(cohens_d(self._samplewise_losses[idxs], 
+                                      self._samplewise_losses))
+            # could also compute statistical significance if desired
+            # pval = ttest_ind(self._samplewise_losses[idxs], 
+            #                     x2=self._samplewise_losses[odxs], 
+            #                     value=0.,
+            #                     alternative='larger',
+            #                     usevar='unequal')[1]
+            # p_vals.append(pval)
+
+        if plot:
+            if ax is None:
+                ax = plt.gca()
+            ax.plot(self.subset_fractions, cds)
+            ax.set_xlabel('Subset Fraction')
+            ax.set_ylabel("Cohen's d (Effect Size) of Loss")
+        
+        self._effect_sizes = cds
+        self._effect_sizes_computed = True
+        return self.subset_fractions, cds
+
+    def find_max_effect_size(self):
+        """Finds the index of the worst subset producing the max effect size
+        for the difference in the average loss of the subset and full dataset. 
+
+        :return: The index of the subset producing the max effect size and the
+        max effect size.
+        :rtype: (int, float)
+        """
+
+        if not self._effect_sizes_computed:
+            self.compute_effect_sizes(plot=False)
+        return np.argmax(self._effect_sizes), max(self._effect_sizes)
     
 
 # This is a naive clustering approach that is an alternative to AFISP
