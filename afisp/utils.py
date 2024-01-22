@@ -104,30 +104,30 @@ def xent_surrogate(labels, logits):
     return logits - labels * logits + softplus_term
 
 
-def pfohl_torch_roc_auc_surrogate(y, y_pred, surrogate='xent'):
+# def pfohl_torch_roc_auc_surrogate(y, y_pred, surrogate='xent'):
     
     
-    y_torch = torch.tensor(y)
-    # pfohl used log softmax (so log probabilities
-    logits_torch = torch.tensor(np.log(y_pred))
+#     y_torch = torch.tensor(y)
+#     # pfohl used log softmax (so log probabilities
+#     logits_torch = torch.tensor(np.log(y_pred))
     
-    logits_difference_torch = logits_torch.unsqueeze(0) - logits_torch.unsqueeze(1)
-    labels_difference_torch = y_torch.unsqueeze(0) - y_torch.unsqueeze(1)
+#     logits_difference_torch = logits_torch.unsqueeze(0) - logits_torch.unsqueeze(1)
+#     labels_difference_torch = y_torch.unsqueeze(0) - y_torch.unsqueeze(1)
     
-    # matrex which is 1 if label y_i != label y_j
-    abs_label_difference = torch.abs(labels_difference_torch)
+#     # matrex which is 1 if label y_i != label y_j
+#     abs_label_difference = torch.abs(labels_difference_torch)
     
-    signed_logits_difference_torch = logits_difference_torch * labels_difference_torch
+#     signed_logits_difference_torch = logits_difference_torch * labels_difference_torch
     
-    # TODO: make it 'DRY'
-    if surrogate == 'xent':
-        loss = torch.log(torch.sigmoid(signed_logits_difference_torch))
-        loss = (abs_label_difference * loss).mean(axis=0) * 0.5
-    elif surrogate == 'hinge':
-        loss = torch.maximum(torch.zeros(1), torch.ones(1) - signed_logits_difference_torch)
-        loss = (abs_label_difference * loss).mean(axis=0) * 0.5
+#     # TODO: make it 'DRY'
+#     if surrogate == 'xent':
+#         loss = torch.log(torch.sigmoid(signed_logits_difference_torch))
+#         loss = (abs_label_difference * loss).mean(axis=0) * 0.5
+#     elif surrogate == 'hinge':
+#         loss = torch.maximum(torch.zeros(1), torch.ones(1) - signed_logits_difference_torch)
+#         loss = (abs_label_difference * loss).mean(axis=0) * 0.5
         
-    return np.array(loss.tolist())
+#     return np.array(loss.tolist())
     
 
 def torch_roc_auc_surrogate(y, y_pred, surrogate='xent'):
